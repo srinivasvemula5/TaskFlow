@@ -8,41 +8,69 @@ const JWT_EXPIRES = '7d';
 
 export async function signup(req: Request, res: Response) {
   const { name, email, password, role } = req.body;
+  
+  // Validation
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'Name, email and password are required' });
   }
+  
+  const trimmedName = (name as string).trim();
+  const trimmedEmail = (email as string).trim();
+  const trimmedPassword = (password as string).trim();
+  
+  if (!trimmedName) {
+    return res.status(400).json({ message: 'Name cannot be empty' });
+  }
+  if (!trimmedEmail) {
+    return res.status(400).json({ message: 'Email cannot be empty' });
+  }
+  if (trimmedPassword.length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  }
+  
+  // Email format validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmedEmail)) {
+    return res.status(400).json({ message: 'Invalid email format' });
+  }
+  
   try {
-    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]) as any[];
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [trimmedEmail]) as any[];
     if (existing.length > 0) {
       return res.status(409).json({ message: 'Email already registered' });
     }
-    const hash = await bcrypt.hash(password, 12);
+    const hash = await bcrypt.hash(trimmedPassword, 12);
     const userRole = role === 'admin' ? 'admin' : 'member';
     const [result] = await pool.query(
       'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
-      [name, email, hash, userRole]
+      [trimmedName, trimmedEmail, hash, userRole]
     ) as any[];
     const token = jwt.sign(
-      { userId: result.insertId, email, role: userRole },
+      { userId: result.insertId, email: trimmedEmail, role: userRole },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES }
     );
     return res.status(201).json({
       token,
-      user: { id: result.insertId, name, email, role: userRole }
+      user: { id: result.insertId, name: trimmedName, email: trimmedEmail, role: userRole }
     });
   } catch (err: any) {
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    console.error('Signup error:', err);
+    return res.status(500).json({ message: 'Server error. Please try again later.' });
   }
 }
 
 export async function login(req: Request, res: Response) {
   const { email, password } = req.body;
+  
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' });
   }
+  
+  const trimmedEmail = (email as string).trim();
+  
   try {
-    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]) as any[];
+    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [trimmedEmail]) as any[];
     if (rows.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -61,7 +89,8 @@ export async function login(req: Request, res: Response) {
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err: any) {
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    console.error('Login error:', err);
+    return res.status(500).json({ message: 'Server error. Please try again later.' });
   }
 }
 
